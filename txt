@@ -1,0 +1,97 @@
+要打造一款成熟、安全的 Redis 桌面管理工具，其架构核心在于 Electron 的多进程模型。
+
+简单来说，主进程（Main Process）负责系统底层操作，直接与 Redis 服务器通信；渲染进程（Renderer Process）则负责界面展示和用户交互，它无权直接访问 Node.js 或系统 API。两者通过安全的 IPC（进程间通信） 桥梁进行通信，具体的方案实施流程如下图所示：
+
+🛠️ 核心技术栈
+当使用 Electron + Vue 3 构建应用时，主流技术栈的选择是非常清晰的。以下是推荐的核心选型：
+
+类别	推荐选型	可选方案/备注
+桌面框架	Electron	Tauri (如果追求更小的包体积)
+前端框架	Vue 3 (Composition API)	-
+构建工具	Vite	Webpack (Vue CLI)
+UI 组件库	Naive UI, Element Plus	Ant Design Vue, Arco Design
+Redis 客户端	node-redis	ioredis (已被 Redis 官方建议替换)
+打包工具	electron-builder	electron-forge
+开发语言	TypeScript	-
+状态管理	Pinia	Vuex
+📦 关键库与包解析
+这些核心库是实现桌面端 Redis 管理工具的关键：
+
+electron & @electron/remote：提供桌面应用运行时环境，使你的 Web 应用能够作为原生桌面应用运行。
+
+vue (version 3) & vite：Vue 3 是构建用户界面的先进框架，Vite 则提供了极速的开发服务器启动和模块热替换（HMR）体验。
+
+node-redis：官方推荐的 Redis 客户端库。它会弃用 ioredis，支持连接 Redis 集群、哨兵模式以及所有现代 Redis 功能。
+
+pinia：Vue 的官方状态管理库，用于管理多连接状态、键值列表、服务器信息等。
+
+element-plus：一套成熟的 Vue 3 UI 组件库，可以帮助快速构建专业、美观的界面。
+
+electron-builder：负责将开发完成的项目打包为各个操作系统（Windows, macOS, Linux）上的可执行安装包。
+
+electron-store：用于在本地持久化存储用户的连接配置（如服务器地址、端口，不要存储明文密码）和窗口布局。
+
+vscode-json-languageservice：为 JSON 编辑器提供语法高亮、自动补全和错误检查。
+
+monaco-editor：VSCode 的代码编辑器核心，可以用于创建一个高级的 Lua 脚本编辑视图。
+
+📝 具体实现流程
+下面，我们从零开始，一步步搭建这个应用。
+
+1. 初始化项目
+创建 Vite + Vue 3 项目：打开终端，执行创建命令：
+
+bash
+npm create vite@latest my-redis-client -- --template vue-ts
+cd my-redis-client
+安装核心依赖：
+
+bash
+# 安装Electron和打包工具
+npm install --save-dev electron electron-builder
+# 安装生产环境依赖
+npm install vue@3 pinia node-redis electron-store element-plus
+温馨提示：如果 Electron 下载慢，可以设置镜像源加速。
+
+2. 搭建 Electron 主进程
+在项目根目录下创建 electron/ 文件夹，用于存放主进程代码。
+
+创建 electron/main.ts：这是应用的主入口。Electron 应用有且仅有一个主进程，负责管理窗口和处理系统事件。
+
+创建 electron/preload.ts：这是关键的“预加载脚本”。为了安全，我们在此通过 contextBridge 向渲染进程暴露有限且安全的 API。
+
+3. 构建 Vue 渲染进程界面
+界面布局建议参考主流的 Redis 客户端，采用经典的“三栏式”：
+
+左侧边栏（连接管理与键列表）：使用 el-tree 管理 Redis 服务器列表，服务器下的子节点则是经过 SCAN 分批加载的键。
+
+中间主区域（数据查看与编辑）：根据选中键的类型（STRING, HASH, LIST, SET, ZSET）动态展示不同视图，并提供 el-input、monaco-editor 等编辑器。
+
+底部区域（内置终端）：使用 el-input 模拟一个命令行终端，用于直接执行 Redis 命令，并通过预加载脚本的 API 发送给主进程执行。
+
+4. 实现数据持久化
+在主进程初始化 electron-store：
+在 electron/main.ts 中创建 store 实例，并提供 IPC 接口来读写配置。
+
+密码安全存储：
+绝不以明文形式存储密码。建议使用 safeStorage API 进行存储：
+
+typescript
+// electron/main.ts
+const { safeStorage } = require('electron');
+// ... 在保存密码时
+const encrypted = safeStorage.encryptString(password);
+store.set('credentials.password', encrypted.toString('base64'));
+5. 实现数据扫描与分页
+为了高效浏览可能包含数百万个 Key 的 Redis 库，我们需要实现 SCAN 分页加载。可以在主进程封装成一个可复用的工具函数，接收匹配模式、每页数量等参数，并在渲染进程瀑布流滚动到底部时加载下一页数据。
+
+🚨 安全加固
+对于桌面应用，安全是必须从始至终贯彻的要素。
+
+开启上下文隔离：在 BrowserWindow 配置中，必须设置 contextIsolation: true 和 nodeIntegration: false。这是 Electron 官方推荐的最重要的安全设置。
+
+使用预加载脚本暴露 API：绝对不能将 ipcRenderer 直接暴露给渲染进程。务必在 preload.ts 中使用 contextBridge，只暴露有限、必要的 API 给渲染进程。
+
+启用沙箱模式：在 webPreferences 中设置 sandbox: true，这会进一步限制渲染进程的权限。
+
+避免远程内容：不要加载任何不可信的远程内容，所有资源应随应用包本地加载。
