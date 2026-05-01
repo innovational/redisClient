@@ -69,6 +69,18 @@ const electronAPI = {
    */
   getConnectionStatus: (id: string) => ipcRenderer.invoke('redis:status', id),
 
+  /**
+   * 切换连接（断开其他连接）
+   * @param id 连接 ID
+   * @param config 连接配置
+   */
+  switchConnection: (id: string, config: {
+    host: string
+    port: number
+    password?: string
+    db?: number
+  }) => ipcRenderer.invoke('redis:switch-connection', id, config),
+
   // ==================== 键值操作 ====================
 
   /**
@@ -233,8 +245,47 @@ const electronAPI = {
   closeWindow: () => ipcRenderer.send('window:close')
 }
 
+// 菜单事件处理
+// 监听来自主进程的菜单点击事件
+const menuEventListeners: { [key: string]: ((...args: unknown[]) => void)[] } = {}
+
+/**
+ * 监听菜单事件
+ * @param channel 事件通道
+ * @param listener 事件处理器
+ */
+const onMenuEvent = (channel: string, listener: (...args: unknown[]) => void) => {
+  if (!menuEventListeners[channel]) {
+    menuEventListeners[channel] = []
+  }
+  menuEventListeners[channel].push(listener)
+
+  // 注册一次监听器
+  ipcRenderer.on(channel, (event, ...args) => {
+    menuEventListeners[channel].forEach(listener => listener(...args))
+  })
+}
+
+/**
+ * 移除菜单事件监听
+ * @param channel 事件通道
+ * @param listener 事件处理器
+ */
+const removeMenuEventListener = (channel: string, listener: (...args: unknown[]) => void) => {
+  if (menuEventListeners[channel]) {
+    menuEventListeners[channel] = menuEventListeners[channel].filter(l => l !== listener)
+  }
+}
+
+// 扩展 electronAPI 添加菜单事件监听方法
+const extendedElectronAPI = {
+  ...electronAPI,
+  onMenuEvent,
+  removeMenuEventListener
+}
+
 // 通过 contextBridge 暴露 API 给渲染进程
-contextBridge.exposeInMainWorld('electronAPI', electronAPI)
+contextBridge.exposeInMainWorld('electronAPI', extendedElectronAPI)
 
 // 导出类型声明供渲染进程使用
-export type ElectronAPI = typeof electronAPI
+export type ElectronAPI = typeof extendedElectronAPI

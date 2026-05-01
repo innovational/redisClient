@@ -205,6 +205,13 @@ export function setupIpcHandlers(
     return await redisManager.executeCommand(id, command)
   })
 
+  /**
+   * 切换连接（断开其他连接）
+   */
+  ipcMain.handle('redis:switch-connection', async (_, id, config) => {
+    return await redisManager.switchConnection(id, config)
+  })
+
   // ==================== 窗口管理 ====================
 
   /**

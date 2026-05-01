@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { RedisManager } from './redis-manager'
 import { StoreManager } from './store-manager'
@@ -19,6 +19,57 @@ class MainApplication {
   }
 
   /**
+   * 创建自定义菜单
+   */
+  private createMenu(): void {
+    const template: MenuItemConstructorOptions[] = [
+      {
+        label: '连接',
+        submenu: [
+          {
+            label: '添加连接',
+            click: () => {
+              this.mainWindow?.webContents.send('menu:add-connection')
+            }
+          },
+          {
+            type: 'separator'
+          },
+          {
+            label: '退出',
+            role: 'quit'
+          }
+        ]
+      },
+      {
+        label: '编辑',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' }
+        ]
+      },
+      {
+        label: '帮助',
+        submenu: [
+          {
+            label: '关于',
+            click: () => {
+              this.mainWindow?.webContents.send('menu:about')
+            }
+          }
+        ]
+      }
+    ]
+
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
+  }
+
+  /**
    * 创建应用主窗口
    * 配置了安全加固选项：上下文隔离、节点集成禁用、沙箱模式
    */
@@ -28,7 +79,7 @@ class MainApplication {
       height: 900,
       minWidth: 1000,
       minHeight: 700,
-      title: 'Redis Client',
+      title: 'Wu-Redis',
       webPreferences: {
         preload: join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -49,6 +100,9 @@ class MainApplication {
     this.mainWindow.on('closed', () => {
       this.mainWindow = null
     })
+
+    // 创建自定义菜单
+    this.createMenu()
   }
 
   /**
@@ -65,7 +119,7 @@ class MainApplication {
     // 创建主窗口
     this.createWindow()
 
-    console.log('Redis Client 应用已初始化')
+    console.log('Wu-Redis 应用已初始化')
   }
 }
 

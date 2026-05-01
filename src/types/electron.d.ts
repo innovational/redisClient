@@ -51,6 +51,7 @@ export interface ElectronAPI {
   connect: (id: string, config: RedisConnectionConfig) => Promise<{ success: boolean; error?: string }>
   disconnect: (id: string) => Promise<{ success: boolean }>
   getConnectionStatus: (id: string) => Promise<ConnectionStatus>
+  switchConnection: (id: string, config: RedisConnectionConfig) => Promise<{ success: boolean; error?: string }>
 
   // 键值操作
   scanKeys: (id: string, cursor: number, pattern: string, count: number) => Promise<ScanResult>
@@ -78,6 +79,10 @@ export interface ElectronAPI {
   minimizeWindow: () => void
   maximizeWindow: () => void
   closeWindow: () => void
+
+  // 菜单事件
+  onMenuEvent: (channel: string, listener: (...args: unknown[]) => void) => void
+  removeMenuEventListener: (channel: string, listener: (...args: unknown[]) => void) => void
 }
 
 declare global {

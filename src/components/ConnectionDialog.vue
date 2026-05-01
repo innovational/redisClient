@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="新建连接"
+    :title="dialogTitle"
     width="500px"
     @close="handleClose"
   >
@@ -63,7 +63,7 @@
       <el-button @click="handleClose">取消</el-button>
       <el-button @click="handleTest">测试连接</el-button>
       <el-button type="primary" @click="handleSave" :loading="saving">
-        保存
+        {{ isEdit ? '保存修改' : '保存' }}
       </el-button>
     </template>
   </el-dialog>
@@ -71,18 +71,20 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useConnectionStore } from '@/stores/connection'
+import { useConnectionStore, ConnectionConfig } from '@/stores/connection'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
 
 // 定义 Props
 const props = defineProps<{
   visible: boolean
+  editConnection?: ConnectionConfig | null
 }>()
 
 // 定义 Emits
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'connected'): void
+  (e: 'updated'): void
 }>()
 
 const connectionStore = useConnectionStore()
@@ -92,6 +94,12 @@ const formRef = ref<FormInstance>()
 
 // 保存状态
 const saving = ref(false)
+
+// 是否为编辑模式
+const isEdit = computed(() => !!props.editConnection)
+
+// 对话框标题
+const dialogTitle = computed(() => isEdit.value ? '编辑连接' : '新建连接')
 
 // 表单数据
 const formData = ref({
@@ -136,6 +144,23 @@ const resetForm = (): void => {
 }
 
 /**
+ * 监听编辑连接变化
+ */
+watch(() => props.editConnection, (newConn) => {
+  if (newConn) {
+    formData.value = {
+      name: newConn.name,
+      host: newConn.host,
+      port: newConn.port,
+      password: newConn.password || '',
+      db: newConn.db || 0
+    }
+  } else {
+    resetForm()
+  }
+}, { immediate: true })
+
+/**
  * 关闭对话框
  */
 const handleClose = (): void => {
@@ -170,7 +195,7 @@ const handleTest = async (): Promise<void> => {
 }
 
 /**
- * 保存连接
+ * 保存连接（新建或编辑）
  */
 const handleSave = async (): Promise<void> => {
   try {
@@ -178,24 +203,37 @@ const handleSave = async (): Promise<void> => {
 
     saving.value = true
 
-    await connectionStore.saveConnection({
-      name: formData.value.name,
-      host: formData.value.host,
-      port: formData.value.port,
-      password: formData.value.password || undefined,
-      db: formData.value.db
-    })
+    if (isEdit.value && props.editConnection) {
+      // 编辑模式：更新连接
+      await connectionStore.updateConnection(props.editConnection.id, {
+        name: formData.value.name,
+        host: formData.value.host,
+        port: formData.value.port,
+        password: formData.value.password || undefined,
+        db: formData.value.db
+      })
+      ElMessage.success('更新成功')
+      emit('updated')
+    } else {
+      // 新建模式：保存连接
+      await connectionStore.saveConnection({
+        name: formData.value.name,
+        host: formData.value.host,
+        port: formData.value.port,
+        password: formData.value.password || undefined,
+        db: formData.value.db
+      })
+      ElMessage.success('保存成功')
 
-    ElMessage.success('保存成功')
+      // 自动连接到保存的服务器
+      const connections = connectionStore.connections
+      const savedConn = connections[connections.length - 1]
 
-    // 自动连接到保存的服务器
-    const connections = connectionStore.connections
-    const savedConn = connections[connections.length - 1]
-
-    if (savedConn) {
-      const connected = await connectionStore.connect(savedConn.id)
-      if (connected) {
-        emit('connected')
+      if (savedConn) {
+        const connected = await connectionStore.connect(savedConn.id)
+        if (connected) {
+          emit('connected')
+        }
       }
     }
 

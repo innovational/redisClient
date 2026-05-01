@@ -1,4 +1,4 @@
-# Redis Client
+# Wu-Redis
 
 一个基于 Electron + Vue 3 的成熟、安全的 Redis 桌面管理工具。
 
@@ -44,6 +44,13 @@ npm run dev
 ```bash
 # 构建应用
 npm run build
+```
+
+## 打包为 Windows 版本
+
+```bash
+# 打包应用为 Windows 版本
+npm run pack-win
 ```
 
 ## 项目结构

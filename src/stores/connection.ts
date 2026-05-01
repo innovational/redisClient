@@ -69,6 +69,35 @@ export const useConnectionStore = defineStore('connection', () => {
     return id
   }
 
+  // 更新连接配置
+  const updateConnection = async (id: string, config: Omit<ConnectionConfig, 'id' | 'connected'>): Promise<void> => {
+    const connection = connections.value.find(conn => conn.id === id)
+    if (!connection) {
+      return
+    }
+
+    // 如果当前连接已连接，先断开
+    if (connection.connected) {
+      await disconnect(id)
+    }
+
+    // 更新配置
+    await window.electronAPI.saveConnection(id, {
+      name: config.name,
+      host: config.host,
+      port: config.port,
+      password: config.password,
+      db: config.db
+    })
+
+    // 更新内存中的配置
+    connection.name = config.name
+    connection.host = config.host
+    connection.port = config.port
+    connection.password = config.password
+    connection.db = config.db
+  }
+
   // 删除连接
   const deleteConnection = async (id: string): Promise<void> => {
     // 如果是当前活动连接，先断开
@@ -126,6 +155,38 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
+  // 切换连接（断开其他连接）
+  const switchConnection = async (id: string): Promise<boolean> => {
+    const connection = connections.value.find(conn => conn.id === id)
+    if (!connection) {
+      return false
+    }
+
+    try {
+      const result = await window.electronAPI.switchConnection(id, {
+        host: connection.host,
+        port: connection.port,
+        password: connection.password,
+        db: connection.db
+      })
+
+      if (result.success) {
+        // 更新所有连接状态
+        connections.value.forEach(conn => {
+          conn.connected = conn.id === id
+        })
+        activeConnectionId.value = id
+      } else {
+        connection.error = result.error
+      }
+
+      return result.success
+    } catch (error) {
+      connection.error = error instanceof Error ? error.message : '连接失败'
+      return false
+    }
+  }
+
   // 选中连接
   const selectConnection = (id: string | null): void => {
     activeConnectionId.value = id
@@ -137,9 +198,11 @@ export const useConnectionStore = defineStore('connection', () => {
     activeConnection,
     loadConnections,
     saveConnection,
+    updateConnection,
     deleteConnection,
     connect,
     disconnect,
+    switchConnection,
     selectConnection
   }
 })

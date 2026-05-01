@@ -1,5 +1,22 @@
 <template>
   <div class="list-editor">
+    <!-- TTL 设置 -->
+    <div class="ttl-section">
+      <span>过期时间：</span>
+      <el-input-number
+        v-model="ttl"
+        :min="-1"
+        :max="86400 * 365 * 10"
+        size="small"
+        controls-position="right"
+      />
+      <span class="ttl-unit">秒</span>
+      <el-button size="small" @click="handleSetTTL">设置</el-button>
+      <span v-if="currentTTL > 0" class="current-ttl">
+        剩余：{{ currentTTL }} 秒
+      </span>
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <el-button size="small" type="primary" @click="handleAddItem">
@@ -36,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
@@ -52,12 +69,28 @@ interface ListItem {
 
 const items = ref<ListItem[]>([])
 
+// TTL 值
+const ttl = ref(-1)
+
+// 当前 TTL
+const currentTTL = ref(-1)
+
 /**
  * 组件挂载时加载数据
  */
 onMounted(async () => {
   await loadData()
 })
+
+/**
+ * 监听 keyName 属性变化，重新加载数据
+ */
+watch(
+  () => props.keyName,
+  async () => {
+    await loadData()
+  }
+)
 
 /**
  * 加载数据
@@ -69,6 +102,9 @@ const loadData = async (): Promise<void> => {
       index,
       value
     }))
+
+    // 获取 TTL
+    currentTTL.value = await window.electronAPI.getKeyTTL(props.connectionId, props.keyName)
   } catch (error) {
     ElMessage.error('加载数据失败')
     console.error(error)
@@ -110,6 +146,26 @@ const handleSave = async (): Promise<void> => {
     console.error(error)
   }
 }
+
+/**
+ * 设置 TTL
+ */
+const handleSetTTL = async (): Promise<void> => {
+  try {
+    if (ttl.value === -1) {
+      // -1 表示永不过期
+      await window.electronAPI.setKeyTTL(props.connectionId, props.keyName, -1)
+      currentTTL.value = -1
+    } else {
+      await window.electronAPI.setKeyTTL(props.connectionId, props.keyName, ttl.value)
+      currentTTL.value = ttl.value
+    }
+    ElMessage.success('设置成功')
+  } catch (error) {
+    ElMessage.error('设置失败')
+    console.error(error)
+  }
+}
 </script>
 
 <style scoped>
@@ -118,6 +174,25 @@ const handleSave = async (): Promise<void> => {
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+.ttl-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.ttl-unit {
+  color: #666;
+}
+
+.current-ttl {
+  margin-left: 10px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .toolbar {

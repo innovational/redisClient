@@ -46,6 +46,16 @@
               <el-icon><Close /></el-icon>
             </el-button>
 
+            <!-- 编辑按钮 -->
+            <el-button
+              type="info"
+              size="small"
+              circle
+              @click="handleEdit(conn)"
+            >
+              <el-icon><Edit /></el-icon>
+            </el-button>
+
             <!-- 删除按钮 -->
             <el-button
               type="danger"
@@ -60,18 +70,30 @@
       </el-scrollbar>
     </div>
   </div>
+
+  <!-- 编辑连接对话框 -->
+  <ConnectionDialog
+    v-model:visible="showEditDialog"
+    :edit-connection="editingConnection"
+    @updated="handleConnectionUpdated"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Connection, Delete, Close } from '@element-plus/icons-vue'
+import { Connection, Delete, Close, Edit } from '@element-plus/icons-vue'
 import { useConnectionStore, ConnectionConfig } from '@/stores/connection'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import ConnectionDialog from './ConnectionDialog.vue'
 
 const connectionStore = useConnectionStore()
 
 // 当前正在连接的 ID
 const connectingId = ref<string | null>(null)
+
+// 编辑对话框相关
+const showEditDialog = ref(false)
+const editingConnection = ref<ConnectionConfig | null>(null)
 
 /**
  * 组件挂载时加载连接列表
@@ -114,6 +136,22 @@ const handleConnect = async (id: string): Promise<void> => {
 const handleDisconnect = async (id: string): Promise<void> => {
   await connectionStore.disconnect(id)
   ElMessage.info('已断开连接')
+}
+
+/**
+ * 编辑连接
+ */
+const handleEdit = (conn: ConnectionConfig): void => {
+  editingConnection.value = conn
+  showEditDialog.value = true
+}
+
+/**
+ * 连接更新后的处理
+ */
+const handleConnectionUpdated = (): void => {
+  showEditDialog.value = false
+  editingConnection.value = null
 }
 
 /**

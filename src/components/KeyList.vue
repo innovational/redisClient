@@ -2,21 +2,36 @@
   <div class="key-list-panel">
     <!-- 搜索栏 -->
     <div class="search-bar">
-      <el-input
-        v-model="searchPattern"
-        size="small"
-        placeholder="键搜索模式 (如: user*)"
-        @keyup.enter="handleSearch"
-      >
-        <template #append>
-          <el-button @click="handleSearch">
-            <el-icon><Search /></el-icon>
-          </el-button>
-        </template>
-      </el-input>
-      <el-button size="small" @click="handleRefresh">
-        <el-icon><Refresh /></el-icon>
-      </el-button>
+      <div class="search-input-wrapper">
+        <el-select
+          v-model="searchMode"
+          class="search-mode-select"
+        >
+          <el-option label="包含" value="contains" />
+          <el-option label="前缀" value="prefix" />
+          <el-option label="后缀" value="suffix" />
+        </el-select>
+        <el-input
+          v-model="searchPattern"
+          size="small"
+          placeholder="搜索键名"
+          @keyup.enter="handleSearch"
+        >
+          <template #append>
+            <el-button @click="handleSearch">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </template>
+        </el-input>
+      </div>
+      <div class="search-actions">
+        <el-button  @click="handleRefresh">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
+        <el-button type="primary" @click="handleAddKey">
+          <el-icon><Plus /></el-icon>
+        </el-button>
+      </div>
     </div>
 
     <!-- 键列表 -->
@@ -42,6 +57,15 @@
             {{ getTypeIcon(key.type) }}
           </span>
           <span class="key-name">{{ key.name }}</span>
+          <div class="key-item-actions" @click.stop>
+            <el-button
+              size="small"
+              link
+              @click="handleDeleteKey(key.name)"
+            >
+              <el-icon class="delete-icon"><Delete /></el-icon>
+            </el-button>
+          </div>
         </div>
 
         <!-- 加载状态 -->
@@ -56,23 +80,117 @@
         </div>
       </el-scrollbar>
     </div>
+
+    <!-- 添加键对话框 -->
+    <el-dialog
+      v-model="showAddKeyDialog"
+      title="新建键"
+      width="450px"
+      @close="handleCloseAddKeyDialog"
+    >
+      <el-form
+        ref="addKeyFormRef"
+        :model="addKeyForm"
+        :rules="addKeyRules"
+        label-width="80px"
+      >
+        <el-form-item label="键名" prop="keyName">
+          <el-input
+            v-model="addKeyForm.keyName"
+            placeholder="请输入键名"
+          />
+        </el-form-item>
+        <el-form-item label="类型" prop="keyType">
+          <el-select v-model="addKeyForm.keyType">
+            <el-option label="String" :value="RedisKeyType.STRING" />
+            <el-option label="Hash" :value="RedisKeyType.HASH" />
+            <el-option label="List" :value="RedisKeyType.LIST" />
+            <el-option label="Set" :value="RedisKeyType.SET" />
+            <el-option label="ZSet" :value="RedisKeyType.ZSET" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="值" prop="value">
+          <el-input
+            v-model="addKeyForm.value"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入值（String类型）"
+          />
+        </el-form-item>
+        <el-form-item label="过期时间（秒）">
+          <el-input-number
+            v-model="addKeyForm.ttl"
+            :min="-1"
+            :max="86400 * 365 * 10"
+            size="small"
+          />
+          <span class="ttl-hint">-1表示永不过期</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="handleCloseAddKeyDialog">取消</el-button>
+        <el-button type="primary" @click="handleCreateKey">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { Search, Refresh, Loading } from '@element-plus/icons-vue'
+import { Search, Refresh, Loading, Plus, Delete } from '@element-plus/icons-vue'
 import { useKeyStore, RedisKeyType } from '@/stores/key'
 import { useConnectionStore } from '@/stores/connection'
+import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus'
 
 const keyStore = useKeyStore()
 const connectionStore = useConnectionStore()
 
 // 搜索模式
-const searchPattern = ref('*')
+const searchMode = ref<'contains' | 'prefix' | 'suffix'>('contains')
+
+// 搜索关键词
+const searchPattern = ref('')
 
 // 列表引用
 const listRef = ref<HTMLElement | null>(null)
+
+// 添加键对话框
+const showAddKeyDialog = ref(false)
+const addKeyFormRef = ref<FormInstance>()
+const addKeyForm = ref({
+  keyName: '',
+  keyType: RedisKeyType.STRING,
+  value: '',
+  ttl: -1
+})
+
+// 添加键表单验证规则
+const addKeyRules: FormRules = {
+  keyName: [
+    { required: true, message: '请输入键名', trigger: 'blur' }
+  ],
+  keyType: [
+    { required: true, message: '请选择类型', trigger: 'change' }
+  ]
+}
+
+/**
+ * 根据搜索模式构建 Redis SCAN 模式
+ */
+const buildScanPattern = (keyword: string, mode: 'contains' | 'prefix' | 'suffix'): string => {
+  if (!keyword) {
+    return '*'
+  }
+  switch (mode) {
+    case 'prefix':
+      return `${keyword}*`
+    case 'suffix':
+      return `*${keyword}`
+    case 'contains':
+    default:
+      return `*${keyword}*`
+  }
+}
 
 /**
  * 加载键列表
@@ -93,7 +211,8 @@ const loadKeys = async (append = false): Promise<void> => {
  * 搜索键
  */
 const handleSearch = async (): Promise<void> => {
-  keyStore.setSearchPattern(searchPattern.value)
+  const pattern = buildScanPattern(searchPattern.value, searchMode.value)
+  keyStore.setSearchPattern(pattern)
   await loadKeys(false)
 }
 
@@ -101,6 +220,8 @@ const handleSearch = async (): Promise<void> => {
  * 刷新键列表
  */
 const handleRefresh = async (): Promise<void> => {
+  const pattern = buildScanPattern(searchPattern.value, searchMode.value)
+  keyStore.setSearchPattern(pattern)
   await loadKeys(false)
 }
 
@@ -151,6 +272,121 @@ const getTypeIcon = (type: RedisKeyType): string => {
   }
 }
 
+/**
+ * 打开添加键对话框
+ */
+const handleAddKey = (): void => {
+  showAddKeyDialog.value = true
+}
+
+/**
+ * 关闭添加键对话框
+ */
+const handleCloseAddKeyDialog = (): void => {
+  showAddKeyDialog.value = false
+  addKeyForm.value = {
+    keyName: '',
+    keyType: RedisKeyType.STRING,
+    value: '',
+    ttl: -1
+  }
+  addKeyFormRef.value?.resetFields()
+}
+
+/**
+ * 创建键
+ */
+const handleCreateKey = async (): Promise<void> => {
+  try {
+    await addKeyFormRef.value?.validate()
+
+    if (!connectionStore.activeConnectionId) {
+      ElMessage.error('请先选择连接')
+      return
+    }
+
+    // 根据类型创建键
+    switch (addKeyForm.value.keyType) {
+      case RedisKeyType.STRING:
+        await window.electronAPI.setString(
+          connectionStore.activeConnectionId,
+          addKeyForm.value.keyName,
+          addKeyForm.value.value,
+          addKeyForm.value.ttl > 0 ? addKeyForm.value.ttl : undefined
+        )
+        break
+      case RedisKeyType.HASH:
+        // Hash 类型创建一个空键或设置一个默认字段
+        await window.electronAPI.setHashField(
+          connectionStore.activeConnectionId,
+          addKeyForm.value.keyName,
+          'default',
+          addKeyForm.value.value || ''
+        )
+        break
+      case RedisKeyType.LIST:
+        // List 类型
+        const listValues = addKeyForm.value.value ? addKeyForm.value.value.split('\n') : []
+        await window.electronAPI.setList(
+          connectionStore.activeConnectionId,
+          addKeyForm.value.keyName,
+          listValues
+        )
+        break
+      case RedisKeyType.SET:
+        // Set 类型
+        const setValues = addKeyForm.value.value ? addKeyForm.value.value.split('\n').filter(v => v.trim()) : []
+        if (setValues.length > 0) {
+          await window.electronAPI.executeCommand(
+            connectionStore.activeConnectionId,
+            `SADD ${addKeyForm.value.keyName} ${setValues.join(' ')}`
+          )
+        }
+        break
+      case RedisKeyType.ZSET:
+        // ZSet 类型（简单处理，默认分数为0）
+        await window.electronAPI.executeCommand(
+          connectionStore.activeConnectionId,
+          `ZADD ${addKeyForm.value.keyName} 0 "${addKeyForm.value.value}"`
+        )
+        break
+    }
+
+    ElMessage.success('创建成功')
+    handleCloseAddKeyDialog()
+    await handleRefresh()
+  } catch (error) {
+    ElMessage.error('创建失败')
+    console.error(error)
+  }
+}
+
+/**
+ * 删除单个键
+ */
+const handleDeleteKey = async (keyName: string): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除键 "${keyName}" 吗？`,
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    if (!connectionStore.activeConnectionId) {
+      return
+    }
+
+    await keyStore.deleteKeys(connectionStore.activeConnectionId, [keyName])
+    ElMessage.success('删除成功')
+  } catch {
+    // 用户取消操作
+  }
+}
+
 // 监听连接变化，重新加载键列表
 watch(
   () => connectionStore.activeConnectionId,
@@ -163,6 +399,11 @@ watch(
   }
 )
 
+// 监听搜索模式变化
+watch(searchMode, () => {
+  handleSearch()
+})
+
 // 组件挂载时加载数据
 onMounted(async () => {
   if (connectionStore.activeConnectionId) {
@@ -172,6 +413,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.el-button+.el-button {
+    margin-left: 5px;
+}
 .key-list-panel {
   height: 100%;
   display: flex;
@@ -181,12 +425,26 @@ onMounted(async () => {
 .search-bar {
   padding: 10px;
   display: flex;
-  gap: 5px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   border-bottom: 1px solid #e4e4e4;
 }
 
-.search-bar .el-input {
+.search-input-wrapper {
+  display: flex;
+    align-items: center;
+  gap: 5px;
   flex: 1;
+}
+
+.search-mode-select {
+  width: 80px;
+}
+
+.search-actions {
+  display: flex;
+  gap: 3px;
 }
 
 .key-list {
@@ -218,6 +476,10 @@ onMounted(async () => {
 
 .key-item:hover {
   background-color: #f5f5f5;
+}
+
+.key-item:hover .key-item-actions {
+  display: flex;
 }
 
 .key-item.active {
@@ -262,11 +524,20 @@ onMounted(async () => {
 }
 
 .key-name {
+  flex: 1;
   font-size: 13px;
   color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.key-item-actions {
+  display: none;
+}
+
+.delete-icon {
+  color: #f56c6c;
 }
 
 .loading,
@@ -281,5 +552,11 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+.ttl-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

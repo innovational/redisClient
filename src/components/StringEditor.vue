@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
@@ -59,6 +59,16 @@ const currentTTL = ref(-1)
 onMounted(async () => {
   await loadData()
 })
+
+/**
+ * 监听 keyName 属性变化，重新加载数据
+ */
+watch(
+  () => props.keyName,
+  async () => {
+    await loadData()
+  }
+)
 
 /**
  * 加载数据

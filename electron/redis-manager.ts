@@ -415,6 +415,48 @@ export class RedisManager {
   }
 
   /**
+   * 创建一次性连接执行操作后自动关闭
+   * @param config 连接配置
+   * @param operation 操作函数
+   */
+  public async executeWithTempConnection<T>(
+    config: RedisConnectionConfig,
+    operation: (client: RedisClientType) => Promise<T>
+  ): Promise<T> {
+    let client: RedisClientType | null = null
+    try {
+      client = this.createClient(config)
+      await client.connect()
+      await client.ping()
+      return await operation(client)
+    } finally {
+      if (client) {
+        await client.quit().catch(() => {})
+      }
+    }
+  }
+
+  /**
+   * 切换连接时关闭旧连接
+   * @param newId 新连接 ID
+   * @param newConfig 新连接配置
+   */
+  public async switchConnection(newId: string, newConfig: RedisConnectionConfig): Promise<{
+    success: boolean
+    error?: string
+  }> {
+    // 断开所有其他连接
+    for (const id of this.clients.keys()) {
+      if (id !== newId) {
+        await this.disconnect(id)
+      }
+    }
+
+    // 连接新的服务器
+    return await this.connect(newId, newConfig)
+  }
+
+  /**
    * 解析命令字符串
    * @param command 命令字符串
    */

@@ -118,8 +118,9 @@ export const useKeyStore = defineStore('key', () => {
    * @param keyName 键名
    */
   const selectKey = async (connectionId: string, keyName: string): Promise<void> => {
+    const type = await window.electronAPI.getKeyType(connectionId, keyName)
     selectedKey.value = keyName
-    selectedKeyType.value = await window.electronAPI.getKeyType(connectionId, keyName)
+    selectedKeyType.value = type
   }
 
   /**
