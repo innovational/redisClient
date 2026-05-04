@@ -1,6 +1,7 @@
 # Wu-Redis
 
 一个基于 Electron + Vue 3 的成熟、安全的 Redis 桌面管理工具。
+windows 客户端 https://github.com/innovational/redisClient/releases/tag/version
 
 ## 功能特性
 
