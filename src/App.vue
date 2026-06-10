@@ -118,7 +118,7 @@
       width="400px"
     >
       <div class="about-content">
-        <p>Wu-Redis v1.0.1</p>
+        <p>Wu-Redis v1.0.2</p>
         <p class="about-desc">一个成熟、安全的 Redis 桌面管理工具</p>
         <p class="about-copyright">Copyright © 2026</p>
       </div>

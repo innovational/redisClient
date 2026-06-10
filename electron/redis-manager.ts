@@ -1,4 +1,6 @@
-import { createClient, RedisClientType, RedisModules } from 'redis'
+import { createClient } from 'redis'
+
+type RedisClient = ReturnType<typeof createClient>
 
 /**
  * Redis 连接配置接口
@@ -46,7 +48,7 @@ export enum RedisKeyType {
  */
 export class RedisManager {
   // 存储所有活跃的 Redis 客户端，键为连接 ID
-  private clients: Map<string, RedisClientType> = new Map()
+  private clients: Map<string, RedisClient> = new Map()
 
   // 存储连接状态
   private status: Map<string, ConnectionStatus> = new Map()
@@ -60,7 +62,7 @@ export class RedisManager {
     success: boolean
     error?: string
   }> {
-    let testClient: RedisClientType | null = null
+    let testClient: RedisClient | null = null
     try {
       // 创建临时客户端进行测试
       testClient = this.createClient(config)
@@ -158,7 +160,7 @@ export class RedisManager {
    * 获取客户端实例
    * @param id 连接 ID
    */
-  private getClient(id: string): RedisClientType {
+  private getClient(id: string): RedisClient {
     const client = this.clients.get(id)
     if (!client) {
       throw new Error(`连接 ${id} 不存在`)
@@ -170,15 +172,29 @@ export class RedisManager {
    * 创建 Redis 客户端实例
    * @param config 连接配置
    */
-  private createClient(config: RedisConnectionConfig): RedisClientType {
-    return createClient({
+  private createClient(config: RedisConnectionConfig): RedisClient {
+    const client = createClient({
       socket: {
         host: config.host,
-        port: config.port
+        port: config.port,
+        reconnectStrategy: (retries) => {
+          // 最多重连 10 次，指数退避，最大间隔 10 秒
+          if (retries > 10) {
+            return new Error('重连次数超过限制')
+          }
+          return Math.min(retries * 1000, 10000)
+        }
       },
       password: config.password,
       database: config.db || 0
     })
+
+    // 监听 error 事件，防止未处理异常导致进程崩溃
+    client.on('error', (err) => {
+      console.error(`Redis 连接错误:`, err.message)
+    })
+
+    return client
   }
 
   /**
@@ -421,9 +437,9 @@ export class RedisManager {
    */
   public async executeWithTempConnection<T>(
     config: RedisConnectionConfig,
-    operation: (client: RedisClientType) => Promise<T>
+    operation: (client: RedisClient) => Promise<T>
   ): Promise<T> {
-    let client: RedisClientType | null = null
+    let client: RedisClient | null = null
     try {
       client = this.createClient(config)
       await client.connect()
